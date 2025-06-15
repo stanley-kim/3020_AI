@@ -7,6 +7,7 @@ import creature
 import simulation
 import population
 import genome
+import os
 
 # p.connect(p.GUI)
 # p.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -110,26 +111,27 @@ def run_the_simul_in_the_arena(connect_mode):
         print("run as DIRECT Mode")
     sim.run_one_creature_in_the_arena(cr, 2400 * 100)
 
-def GA(population_size=10, gene_count=3, iteration_count=1000):
-    print(f'population_size({population_size}), gene_count({gene_count}), iteration_count({iteration_count})')
+def GA_without_threads(population_size=10, gene_count=3, generation_count=1000, motor_update_count=2400):
+    print(f'population_size({population_size}), gene_count({gene_count}), generation_count({generation_count}), motor_update_count({motor_update_count})')
     pop = population.Population(pop_size=population_size, 
                                 gene_count=gene_count)
     #sim = simulation.ThreadedSim(pool_size=1)
     sim = simulation.Simulation()
 
-    for iteration in range(iteration_count):
+    for iteration in range(generation_count):
         # this is a non-threaded version 
         # where we just call run_creature instead
-        # of eval_population
+        # of eval_population 
         for cr in pop.creatures:
-            sim.run_one_creature_in_the_arena(cr, 2400)            
+            sim.run_one_creature_in_the_arena(cr=cr, motor_update_count=motor_update_count)            
 #            sim.run_creature(cr, 2400)            
         #sim.eval_population(pop, 2400)
         fits = [cr.get_distance_travelled() 
                 for cr in pop.creatures]
         links = [len(cr.get_expanded_links()) 
                 for cr in pop.creatures]
-        print(iteration, "fittest:", np.round(np.max(fits), 3), 
+        if iteration % 100 == 0 or iteration == generation_count -1:
+            print(iteration, "fittest:", np.round(np.max(fits), 3), 
                 "mean:", np.round(np.mean(fits), 3), "mean links", np.round(np.mean(links)), "max links", np.round(np.max(links)))       
         fit_map = population.Population.get_fitness_map(fits)
         new_creatures = []
@@ -146,6 +148,58 @@ def GA(population_size=10, gene_count=3, iteration_count=1000):
             cr = creature.Creature(1)
             cr.update_dna(dna)
             new_creatures.append(cr)
+        DIRNAME_CSVS = 'csvs'
+        if not os.path.isdir(DIRNAME_CSVS):
+            os.mkdir(DIRNAME_CSVS)
+        # elitism
+        max_fit = np.max(fits)
+        for cr in pop.creatures:
+            if cr.get_distance_travelled() == max_fit:
+                new_cr = creature.Creature(1)
+                new_cr.update_dna(cr.dna)
+                new_creatures[0] = new_cr   
+                filename = os.path.join(DIRNAME_CSVS, "elite_"+ "P" + str(population_size) + "_" + "GC" + str(gene_count)  + "_" + "IT" + str(iteration).zfill(5)+"_" + str(np.round(max_fit, 3))  +".csv")
+                genome.Genome.to_csv(cr.dna, filename)
+                break
+         
+        pop.creatures = new_creatures
+
+def GA_with_threads(population_size=10, gene_count=3, generation_count=1000, motor_update_count=2400):
+
+    pop = population.Population(pop_size=population_size, 
+                                gene_count=gene_count)
+    sim = simulation.ThreadedSim(pool_size=4)
+    #sim = simulation.Simulation()
+
+    for iteration in range(generation_count):
+        sim.eval_population_in_the_arena(pop, motor_update_count)
+        fits = [cr.get_distance_travelled() 
+                for cr in pop.creatures]
+        links = [len(cr.get_expanded_links()) 
+                for cr in pop.creatures]
+        if iteration % 100 == 0 or iteration == generation_count -1:
+            print(iteration, "fittest:", np.round(np.max(fits), 3), 
+                "mean:", np.round(np.mean(fits), 3), "mean links", np.round(np.mean(links)), "max links", np.round(np.max(links)), population_size, gene_count)       
+        fit_map = population.Population.get_fitness_map(fits)
+        new_creatures = []
+        for i in range(len(pop.creatures)):
+            p1_ind = population.Population.select_parent(fit_map)
+            p2_ind = population.Population.select_parent(fit_map)
+            p1 = pop.creatures[p1_ind]
+            p2 = pop.creatures[p2_ind]
+            # now we have the parents!
+            dna = genome.Genome.crossover(p1.dna, p2.dna)
+            dna = genome.Genome.point_mutate(dna, rate=0.1, amount=0.25)
+            dna = genome.Genome.shrink_mutate(dna, rate=0.25)
+            dna = genome.Genome.grow_mutate(dna, rate=0.1)
+            cr = creature.Creature(1)
+            cr.update_dna(dna)
+            new_creatures.append(cr)
+
+        DIRNAME_CSVS = 'csvs'
+        if not os.path.isdir(DIRNAME_CSVS):
+            os.mkdir(DIRNAME_CSVS)
+
         # elitism
         max_fit = np.max(fits)
         for cr in pop.creatures:
@@ -153,14 +207,23 @@ def GA(population_size=10, gene_count=3, iteration_count=1000):
                 new_cr = creature.Creature(1)
                 new_cr.update_dna(cr.dna)
                 new_creatures[0] = new_cr
-                filename = "elite_"+str(iteration)+".csv"
+                filename = os.path.join(DIRNAME_CSVS, "elite_"+ "P" + str(population_size) + "_" + "GC" + str(gene_count)  + "_" + "IT" + str(iteration).zfill(5)+"_" + str(np.round(max_fit, 3))  +".csv")
                 genome.Genome.to_csv(cr.dna, filename)
                 break
         
         pop.creatures = new_creatures
-                        
+
+
 if __name__ == '__main__':
-    GA(iteration_count=100)
+#    for ps in [10, 20, 30, 40, 50]:
+#    for ps in [10, ]:
+        # for gc in [3, 5, 7, 9]:
+ #       for gc in [3, ]:
+  #          for genc in [500, ]:
+   #             GA_with_threads(population_size=ps, gene_count=gc, generation_count=genc, motor_update_count=2400)
+    GA_with_threads(population_size=10, gene_count=3, generation_count=20, motor_update_count=2400)
+    GA_with_threads(population_size=10, gene_count=5, generation_count=20, motor_update_count=2400)
+    GA_with_threads(population_size=10, gene_count=7, generation_count=20, motor_update_count=2400)
 #    run_the_simul(p.DIRECT)
-    run_the_simul_in_the_arena(p.GUI)
+#    run_the_simul_in_the_arena(p.GUI)
 #    default_simple_example()

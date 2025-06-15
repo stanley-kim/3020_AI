@@ -93,13 +93,27 @@ class Creature:
         else:
             self.last_position = pos
 
-    def get_distance_travelled(self):
+    def get_distance_travelled0(self):
         if self.start_position is None or self.last_position is None:
             return 0
         p1 = np.asarray(self.start_position)
         p2 = np.asarray(self.last_position)
         dist = np.linalg.norm(p1-p2)
         return dist 
+
+
+    def get_distance_travelled2(self):
+        if self.start_position is None or self.last_position is None:
+            return 0
+        p1 = np.asarray([0, 0, 5.0])
+        p2 = np.asarray(self.last_position)
+        THRESHOLD_DISTANCE = 20.0
+        dist0 = np.linalg.norm(p1-p2)
+        dist = (THRESHOLD_DISTANCE-dist0) if dist0 <= THRESHOLD_DISTANCE else 0
+        return dist 
+  
+    def get_distance_travelled(self):
+        return self.get_distance_travelled2() 
 
     def update_dna(self, dna):
         self.dna = dna

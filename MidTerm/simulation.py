@@ -6,6 +6,9 @@ class Simulation:
         self.physicsClientId = p.connect(p.DIRECT)
         self.sim_id = sim_id
 
+    def disconnect(self):
+        p.disconnect(physicsClientId=self.physicsClientId)
+
     def run_creature_original(self, cr, iterations=2400):
         pid = self.physicsClientId
         p.resetSimulation(physicsClientId=pid)
@@ -66,7 +69,10 @@ class Simulation:
 
         mountain = p.loadURDF("gaussian_pyramid.urdf", mountain_position, mountain_orientation, useFixedBase=1, physicsClientId=self.physicsClientId)
 
-    def run_one_creature_in_the_arena(self, cr, iterations=2400):
+    def run_one_creature_in_the_arena(self, cr, motor_update_count=2400):
+        if cr == None:
+            print("No creatue. so exit")
+            return
         pid = self.physicsClientId
         p.resetSimulation(physicsClientId=pid)
         p.setPhysicsEngineParameter(enableFileCaching=0, physicsClientId=pid)
@@ -78,7 +84,6 @@ class Simulation:
             cameraTargetPosition=[0, 0, 0],
             physicsClientId=pid
         )
-
 
         p.setGravity(0, 0, -10, physicsClientId=pid)
         # plane_shape = p.createCollisionShape(p.GEOM_PLANE, physicsClientId=pid)
@@ -96,12 +101,9 @@ class Simulation:
 #        p.resetBasePositionAndOrientation(cid, [0, 0, 2.5], [0, 0, 0, 1], physicsClientId=pid)
         p.resetBasePositionAndOrientation(cid, [5, 5, 2.5], [0, 0, 0, 1], physicsClientId=pid)
  
-
-
         p.setRealTimeSimulation(1, physicsClientId=pid)
  
-
-        for step in range(iterations):
+        for step in range(motor_update_count):
             p.stepSimulation(physicsClientId=pid)
             if step % 24 == 0:
                 self.update_motors(cid=cid, cr=cr)
@@ -110,7 +112,8 @@ class Simulation:
             cr.update_position(pos)
             #print(pos[2])
             #print(cr.get_distance_travelled())
-        print(cr.get_distance_travelled())
+        if p.GUI == p.getConnectionInfo(physicsClientId=pid)['connectionMethod']: 
+            print(cr.get_distance_travelled())
 
 
 
@@ -137,6 +140,9 @@ class Simulation:
         for cr in pop.creatures:
             self.run_creature(cr, 2400) 
 
+    def eval_population_in_the_arena(self, pop, iterations):
+        for cr in pop.creatures:
+            self.run_one_creature_in_the_arena(cr, 2400)
 
 class ThreadedSim():
     def __init__(self, pool_size):
@@ -144,9 +150,16 @@ class ThreadedSim():
 
     @staticmethod
     def static_run_creature(sim, cr, iterations):
-        sim.run_creature(cr, iterations)
+        sim.run_creature_original(cr, iterations)
         return cr
     
+    @staticmethod
+    def static_run_creature_in_the_arena(sim, cr, iterations):
+        sim.run_one_creature_in_the_arena(cr, iterations)
+        sim.disconnect()
+        return cr
+
+
     def eval_population(self, pop, iterations):
         """
         pop is a Population object
@@ -175,6 +188,39 @@ class ThreadedSim():
             with Pool(pool_size) as p:
                 # it works on a copy of the creatures, so receive them
                 creatures = p.starmap(ThreadedSim.static_run_creature, pool_argset)
+                # and now put those creatures back into the main 
+                # self.creatures array
+                new_creatures.extend(creatures)
+        pop.creatures = new_creatures
+
+    def eval_population_in_the_arena(self, pop, iterations):
+        """
+        pop is a Population object
+        iterations is frames in pybullet to run for at 240fps
+        """
+        pool_args = [] 
+        start_ind = 0
+        pool_size = len(self.sims)
+        while start_ind < len(pop.creatures):
+            this_pool_args = []
+            for i in range(start_ind, start_ind + pool_size):
+                if i == len(pop.creatures):# the end
+                    break
+                # work out the sim ind
+                sim_ind = i % len(self.sims)
+                this_pool_args.append([
+                            self.sims[sim_ind], 
+                            pop.creatures[i], 
+                            iterations]   
+                )
+            pool_args.append(this_pool_args)
+            start_ind = start_ind + pool_size
+
+        new_creatures = []
+        for pool_argset in pool_args:
+            with Pool(pool_size) as p:
+                # it works on a copy of the creatures, so receive them
+                creatures = p.starmap(ThreadedSim.static_run_creature_in_the_arena, pool_argset)
                 # and now put those creatures back into the main 
                 # self.creatures array
                 new_creatures.extend(creatures)

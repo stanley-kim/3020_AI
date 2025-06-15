@@ -15,7 +15,8 @@ class TestGA(unittest.TestCase):
     def testBasicGA(self):
         pop = population.Population(pop_size=10, 
                                     gene_count=3)
-        sim = simulation.ThreadedSim(pool_size=1)
+        sim = simulation.ThreadedSim(pool_size=4)
+        #sim = simulation.ThreadedSim(pool_size=1)
         #sim = simulation.Simulation()
 
         for iteration in range(1000):
